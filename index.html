@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERC20代币对赌系统</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #0f0; /* 绿色文本 */
+            font-family: 'Courier New', monospace; /* 使用等宽字体 */
+            padding: 5px; /* 添加一些内边距 */
+        }
+
+        #createGameForm {
+            margin-top: 20px;
+        }
+        #createGameForm input[type="text"] {
+            width: 200px;
+            margin-right: 10px;
+        }
+        #createGameForm button {
+            margin-top: 10px;
+        }
+        #gameList {
+            margin-top: 20px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.5.0/dist/web3.min.js"></script>
+</head>
+<body>
+    <div id="walletInfo">
+	</div>
+    <div id="createGameForm">
+        <input type="text" id="tokenContractAddress" placeholder="代币合约地址">
+        <input type="text" id="betAmount" placeholder="数量">
+        <button onclick="createGame()">创建游戏</button>
+    </div>
+
+    <div id="gameList0">
+
+	<h2>游戏列表</h2>
+	<button id="refreshButton">刷新</button>
+	<div id="gameList"></div>
+	</div>
+    <div id="recordSection">
+        <h2>我的对赌记录</h2>
+        <div id="recordList"></div>
+    </div>
+    <script>
+        let walletAddress;
+        let web3;
+        let contract;
+        const contractAddress = '0xd594abf42606373cE854E2133CcF6B34341129B4'; // 合约地址
+        const abi = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"OwnableInvalidOwner","type":"error"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"OwnableUnauthorizedAccount","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"gameId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"betAmount","type":"uint256"},{"indexed":false,"internalType":"bool","name":"result","type":"bool"}],"name":"BattleResultRecorded","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"gameId","type":"uint256"},{"indexed":true,"internalType":"address","name":"winner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amountWon","type":"uint256"}],"name":"GameCompleted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"gameId","type":"uint256"},{"indexed":true,"internalType":"address","name":"player1","type":"address"},{"indexed":false,"internalType":"address","name":"tokenContract","type":"address"},{"indexed":false,"internalType":"uint256","name":"betAmount","type":"uint256"}],"name":"GameCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"inputs":[{"internalType":"uint256","name":"_gameId","type":"uint256"}],"name":"acceptGame","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"battleHistory","outputs":[{"internalType":"uint256","name":"gameId","type":"uint256"},{"internalType":"uint256","name":"betAmount","type":"uint256"},{"internalType":"bool","name":"result","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_tokenContract","type":"address"},{"internalType":"uint256","name":"_betAmount","type":"uint256"}],"name":"createGame","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"dev","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"gameId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"games","outputs":[{"internalType":"address","name":"player1","type":"address"},{"internalType":"address","name":"player2","type":"address"},{"internalType":"address","name":"tokenContract","type":"address"},{"internalType":"uint256","name":"betAmount","type":"uint256"},{"internalType":"bool","name":"completed","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"player","type":"address"}],"name":"getPlayerBattleHistory","outputs":[{"components":[{"internalType":"uint256","name":"gameId","type":"uint256"},{"internalType":"uint256","name":"betAmount","type":"uint256"},{"internalType":"bool","name":"result","type":"bool"}],"internalType":"struct BattleGame.BattleRecord[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getUnfinishedGames","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"unfinishedGames","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"withdrawEther","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_tokenContract","type":"address"}],"name":"withdrawToken","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+		
+const erc20ABI = [
+    // 用于读取代币名称的方法
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "name",
+        "outputs": [{"name": "", "type": "string"}],
+        "payable": false,
+        "stateMutability": "view",
+        "type": "function"
+    },
+    // 用于读取代币符号的方法
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "payable": false,
+        "stateMutability": "view",
+        "type": "function"
+    },
+    // 用于读取代币小数位数的方法
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "payable": false,
+        "stateMutability": "view",
+        "type": "function"
+    },
+    // 用于授权给指定地址操作代币的方法
+    {
+        "constant": false,
+        "inputs": [{"name": "_spender", "type": "address"}, {"name": "_value", "type": "uint256"}],
+        "name": "approve",
+        "outputs": [{"name": "success", "type": "bool"}],
+        "payable": false,
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    // 用于查询某账户已授权给某地址的代币数量的方法
+    {
+        "constant": true,
+        "inputs": [{"name": "_owner", "type": "address"}, {"name": "_spender", "type": "address"}],
+        "name": "allowance",
+        "outputs": [{"name": "remaining", "type": "uint256"}],
+        "payable": false,
+        "stateMutability": "view",
+        "type": "function"
+    }
+];
+
+
+//链接钱包
+async function connectWallet() {
+	if (typeof window.ethereum !== 'undefined') {
+		try {
+			await window.ethereum.enable();
+			web3 = new Web3(window.ethereum);
+			const accounts = await web3.eth.getAccounts();
+			walletAddress = accounts[0];
+			displayWalletInfo();
+			initContract();
+			getUnfinishedGames();
+			displayBattleRecords();
+		} catch (error) {
+			console.error('Failed to connect wallet:', error);
+		}
+	} else {
+		alert('Please install MetaMask to use this website.');
+	}
+}
+
+
+//初始化合约
+function initContract() {
+	contract = new web3.eth.Contract(abi, contractAddress);
+}
+
+//创建游戏
+async function createGame() {
+	const tokenContractAddress = document.getElementById('tokenContractAddress').value;
+	const betAmount =web3.utils.toWei( document.getElementById('betAmount').value,'ether');
+	await checkAllowance(tokenContractAddress, contractAddress, betAmount);
+	try {
+		const result = await contract.methods.createGame(tokenContractAddress, betAmount).send({ from: walletAddress });
+		console.log('Game created:', result);
+		getUnfinishedGames();
+	} catch (error) {
+		console.error('Failed to create game:', error);
+	}
+}
+
+//获取未完成的游戏
+async function getUnfinishedGames() {
+	try {
+		const unfinishedGames = await contract.methods.getUnfinishedGames().call();
+		displayGameList(unfinishedGames);
+	} catch (error) {
+		console.error('Failed to fetch unfinished games:', error);
+	}
+}
+
+//显示未完成的游戏列表
+async function displayGameList(games) {
+	const gameList = document.getElementById('gameList');
+	gameList.innerHTML = '';
+
+	for (let gameId of games) {
+		const game = await getGameInfo(gameId);
+		const erc20 = new web3.eth.Contract(erc20ABI, game.tokenContract);
+		const betAmount = await convertFromRawAmount(erc20,game.betAmount);
+		const gameItem = document.createElement('div');
+		const symbol = await erc20.methods.symbol().call();
+		gameItem.textContent = `游戏ID: ${gameId}, 赌注: ${symbol}:${betAmount}, 状态: ${game.completed}  `;
+	   // 创建接受调整按钮
+	   if(game.player1!=walletAddress){
+			const acceptGameButton = document.createElement('button');
+			acceptGameButton.textContent = '接受';
+			acceptGameButton.addEventListener('click', function() {
+				acceptGame(gameId);
+			});
+			gameItem.appendChild(acceptGameButton);
+		}
+		gameList.appendChild(gameItem);
+	}
+}
+// 进行精度转换
+async function convertFromRawAmount(erc,amount) {
+	const decimals = await erc.methods.decimals().call(); // 获取代币的小数位数
+	const factor = 10 ** decimals;
+	return amount / factor; // 进行精度转换
+}
+
+// 检查代币授权是否足够
+async function checkAllowance(tokenContract, spender, amount) {
+    try {
+        // 获取代币合约实例
+        const token = new web3.eth.Contract(erc20ABI, tokenContract);
+        
+        // 获取当前账户授权给合约地址的代币数量
+        const allowance = await token.methods.allowance(walletAddress, spender).call();
+        console.log(allowance);
+        // 如果授权不足，则先进行授权操作
+        if (allowance < amount) {
+            console.log('Insufficient allowance. Approving...');
+            
+            // 调用代币合约的 approve 方法进行授权
+            const transaction = await token.methods.approve(spender, amount).send({ from: walletAddress });
+            console.log('Approval transaction hash:', transaction.transactionHash);
+        }
+        
+        console.log('Allowance is sufficient.');
+    } catch (error) {
+        console.error('Error checking allowance:', error);
+    }
+}
+
+//获取游戏信息
+async function getGameInfo(gameId) {
+	const game = await contract.methods.games(gameId).call();
+	return {
+		player1: game.player1,
+		player2: game.player2,
+		tokenContract: game.tokenContract,
+		betAmount: game.betAmount,
+		completed: game.completed
+	};
+}
+// 接受挑战功能
+async function acceptGame(gameId) {
+	
+    try {
+        // 调用合约方法接受挑战
+		const game = await getGameInfo(gameId);
+		
+		await checkAllowance(game.tokenContract, contractAddress, game.betAmount);
+		console.log(game.tokenContract);
+        const transaction = await contract.methods.acceptGame(gameId).send({ from: walletAddress });
+        console.log('Transaction hash:', transaction.transactionHash);
+        
+        // 更新游戏列表
+        getUnfinishedGames();
+		displayBattleRecords();
+    } catch (error) {
+        console.error('Failed to accept game:', error);
+    }
+}
+
+// 显示对战记录
+async function displayBattleRecords() {
+	try {
+		const recordList = document.getElementById('recordList');
+		recordList.innerHTML = '';
+
+		// 获取对战记录
+		const battleRecords = await contract.methods.getPlayerBattleHistory(walletAddress).call();
+		// 显示对战记录
+		for (let record of battleRecords) {
+			const gameId = record.gameId;
+			const game = await getGameInfo(gameId);
+			const erc20 = new web3.eth.Contract(erc20ABI, game.tokenContract);
+			const betAmount = await convertFromRawAmount(erc20,record.betAmount);
+			const result = record.result ? '胜利' : '失败';
+			
+			const recordItem = document.createElement('div');
+			
+			const symbol = await erc20.methods.symbol().call();
+			recordItem.textContent = `游戏ID: ${gameId}, 赌注:${symbol}:${betAmount}, 结果: ${result}`;
+            if (!record.result) {
+                recordItem.style.color = 'red'; // 设置文字颜色为红色
+            }
+			recordList.appendChild(recordItem);
+		}
+	} catch (error) {
+		console.error('Failed to display battle records:', error);
+	}
+}
+
+// 初始加载
+window.onload = async function() {
+	await connectWallet();
+
+};	
+//显示钱包信息
+async function displayWalletInfo() {
+            try {
+                const balance = await web3.eth.getBalance(walletAddress);
+                const balanceEth = web3.utils.fromWei(balance, 'ether');
+                document.getElementById('walletInfo').innerHTML = `
+                    <p>Address: ${walletAddress}</p>
+                    <p>Balance: ${balanceEth} BNB</p>`;
+            } catch (error) {
+                console.error('Failed to get wallet info:', error);
+            }
+        }
+			
+   // 获取刷新按钮元素
+    const refreshButton = document.getElementById('refreshButton');
+    
+    // 添加点击事件监听器
+    refreshButton.addEventListener('click', async () => {
+        await getUnfinishedGames();
+        await displayBattleRecords();
+    });
+</script>
+	
+	
+</body>
+</html>
